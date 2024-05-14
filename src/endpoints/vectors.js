@@ -4,6 +4,9 @@ const express = require('express');
 const sanitize = require('sanitize-filename');
 const { jsonParser } = require('../express-common');
 
+// Don't forget to add new sources to the SOURCES array
+const SOURCES = ['transformers', 'mistral', 'openai', 'extras', 'palm', 'togetherai'];
+
 /**
  * Gets the vector for the given text from the given source.
  * @param {string} source - The source of the vector
@@ -13,9 +16,10 @@ const { jsonParser } = require('../express-common');
  */
 async function getVector(source, sourceSettings, text) {
     switch (source) {
+        case 'togetherai':
         case 'mistral':
         case 'openai':
-            return require('../openai-vectors').getOpenAIVector(text, source);
+            return require('../openai-vectors').getOpenAIVector(text, source, sourceSettings.model);
         case 'transformers':
             return require('../embedding').getTransformersVector(text);
         case 'extras':
@@ -35,19 +39,32 @@ async function getVector(source, sourceSettings, text) {
  * @returns {Promise<number[][]>} - The array of vectors for the texts
  */
 async function getBatchVector(source, sourceSettings, texts) {
-    switch (source) {
-        case 'mistral':
-        case 'openai':
-            return require('../openai-vectors').getOpenAIBatchVector(texts, source);
-        case 'transformers':
-            return require('../embedding').getTransformersBatchVector(texts);
-        case 'extras':
-            return require('../extras-vectors').getExtrasBatchVector(texts, sourceSettings.extrasUrl, sourceSettings.extrasKey);
-        case 'palm':
-            return require('../makersuite-vectors').getMakerSuiteBatchVector(texts);
+    const batchSize = 10;
+    const batches = Array(Math.ceil(texts.length / batchSize)).fill(undefined).map((_, i) => texts.slice(i * batchSize, i * batchSize + batchSize));
+
+    let results = [];
+    for (let batch of batches) {
+        switch (source) {
+            case 'togetherai':
+            case 'mistral':
+            case 'openai':
+                results.push(...await require('../openai-vectors').getOpenAIBatchVector(batch, source, sourceSettings.model));
+                break;
+            case 'transformers':
+                results.push(...await require('../embedding').getTransformersBatchVector(batch));
+                break;
+            case 'extras':
+                results.push(...await require('../extras-vectors').getExtrasBatchVector(batch, sourceSettings.extrasUrl, sourceSettings.extrasKey));
+                break;
+            case 'palm':
+                results.push(...await require('../makersuite-vectors').getMakerSuiteBatchVector(batch));
+                break;
+            default:
+                throw new Error(`Unknown vector source ${source}`);
+        }
     }
 
-    throw new Error(`Unknown vector source ${source}`);
+    return results;
 }
 
 /**
@@ -150,19 +167,26 @@ async function queryCollection(collectionId, source, sourceSettings, searchText,
  * @returns {object} - An object that can be used as `sourceSettings` in functions that take that parameter.
  */
 function getSourceSettings(source, request) {
-    // Extras API settings to connect to the Extras embeddings provider
-    let extrasUrl = '';
-    let extrasKey = '';
-    if (source === 'extras') {
-        extrasUrl = String(request.headers['x-extras-url']);
-        extrasKey = String(request.headers['x-extras-key']);
-    }
+    if (source === 'togetherai') {
+        let model = String(request.headers['x-togetherai-model']);
 
-    const sourceSettings = {
-        extrasUrl: extrasUrl,
-        extrasKey: extrasKey
-    };
-    return sourceSettings;
+        return {
+            model: model,
+        };
+    } else {
+        // Extras API settings to connect to the Extras embeddings provider
+        let extrasUrl = '';
+        let extrasKey = '';
+        if (source === 'extras') {
+            extrasUrl = String(request.headers['x-extras-url']);
+            extrasKey = String(request.headers['x-extras-key']);
+        }
+
+        return {
+            extrasUrl: extrasUrl,
+            extrasKey: extrasKey,
+        };
+    }
 }
 
 const router = express.Router();
@@ -249,8 +273,7 @@ router.post('/purge', jsonParser, async (req, res) => {
 
         const collectionId = String(req.body.collectionId);
 
-        const sources = ['transformers', 'openai', 'palm'];
-        for (const source of sources) {
+        for (const source of SOURCES) {
             const index = await getIndex(collectionId, source, false);
 
             const exists = await index.isIndexCreated();

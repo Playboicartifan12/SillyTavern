@@ -384,9 +384,9 @@ app.post('/uploadimage', jsonParser, async (request, response) => {
         }
 
         // if character is defined, save to a sub folder for that character
-        let pathToNewFile = path.join(DIRECTORIES.userImages, filename);
+        let pathToNewFile = path.join(DIRECTORIES.userImages, sanitize(filename));
         if (request.body.ch_name) {
-            pathToNewFile = path.join(DIRECTORIES.userImages, request.body.ch_name, filename);
+            pathToNewFile = path.join(DIRECTORIES.userImages, sanitize(request.body.ch_name), sanitize(filename));
         }
 
         ensureDirectoryExistence(pathToNewFile);
@@ -505,6 +505,9 @@ app.use('/api/openai', require('./src/endpoints/openai').router);
 //Google API
 app.use('/api/google', require('./src/endpoints/google').router);
 
+//Anthropic API
+app.use('/api/anthropic', require('./src/endpoints/anthropic').router);
+
 // Tokenizers
 app.use('/api/tokenizers', require('./src/endpoints/tokenizers').router);
 
@@ -592,6 +595,9 @@ app.use('/api/backends/chat-completions', require('./src/endpoints/backends/chat
 
 // Scale (alt method)
 app.use('/api/backends/scale-alt', require('./src/endpoints/backends/scale-alt').router);
+
+// Speech (text-to-speech and speech-to-text)
+app.use('/api/speech', require('./src/endpoints/speech').router);
 
 const tavernUrl = new URL(
     (cliArguments.ssl ? 'https://' : 'http://') +

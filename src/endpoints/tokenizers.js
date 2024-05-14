@@ -249,6 +249,7 @@ async function loadClaudeTokenizer(modelPath) {
 }
 
 function countClaudeTokens(tokenizer, messages) {
+    // Should be fine if we use the old conversion method instead of the messages API one i think?
     const convertedPrompt = convertClaudePrompt(messages, false, false, false);
 
     // Fallback to strlen estimation
@@ -627,6 +628,10 @@ router.post('/remote/textgenerationwebui/encode', jsonParser, async function (re
                 case TEXTGEN_TYPES.LLAMACPP:
                     url += '/tokenize';
                     args.body = JSON.stringify({ 'content': text });
+                    break;
+                case TEXTGEN_TYPES.APHRODITE:
+                    url += '/v1/tokenize';
+                    args.body = JSON.stringify({ 'prompt': text });
                     break;
                 default:
                     url += '/v1/internal/encode';
